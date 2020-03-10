@@ -7,6 +7,7 @@ import os
 import luigi
 from requests.exceptions import HTTPError
 
+from edx.analytics.tasks.common.mysql_load import MysqlInsertTask
 from edx.analytics.tasks.common.pathutil import PathSetTask
 from edx.analytics.tasks.common.vertica_load import VerticaCopyTask
 from edx.analytics.tasks.util.edx_api_client import EdxApiClient
@@ -713,6 +714,52 @@ class LoadInternalReportingCourseStructureToWarehouse(WarehouseMixin, VerticaCop
     @property
     def auto_primary_key(self):
         return None
+
+    @property
+    def columns(self):
+        return CourseBlockRecord.get_sql_schema()
+
+
+class LoadInternalReportingCourseStructureToMysqlTask(WarehouseMixin, MysqlInsertTask):
+    """
+    Loads the most recent course_block_records table from intermediate storage into mysql.
+    """
+
+    overwrite_hive = luigi.BoolParameter(
+        default=False,
+        description='Overwrite the hive data used as source for this task. Users should set this to True '
+                    'when using a persistent Hive metastore.',
+        significant=False
+    )
+
+    overwrite_mysql = luigi.BoolParameter(
+        default=False,
+        description='Overwrite the table if set to True. Allow users to override this behavior if they '
+                    'want.',
+        significant=False
+    )
+
+    overwrite = None
+
+    def __init__(self, *args, **kwargs):
+        super(LoadInternalReportingCourseStructureToMysqlTask, self).__init__(*args, **kwargs)
+        path = url_path_join(self.warehouse_path, 'course_block_records')
+        path_targets = PathSetTask([path]).output()
+        paths = list(set([os.path.dirname(target.path) for target in path_targets]))
+        dates = [path.rsplit('/', 2)[-1] for path in paths]
+        latest_date = sorted(dates)[-1]
+        self.load_date = datetime.datetime.strptime(latest_date, "dt=%Y-%m-%d").date()
+        self.overwrite = self.overwrite_mysql
+
+    @property
+    def table(self):  # pragma: no cover
+        return 'course_structure'
+
+    @property
+    def insert_source_task(self):
+        record_table_name = 'course_block_records'
+        partition_location = self.hive_partition_path(record_table_name, self.load_date)
+        return ExternalURL(url=partition_location)
 
     @property
     def columns(self):
