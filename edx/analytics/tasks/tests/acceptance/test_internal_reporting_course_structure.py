@@ -76,9 +76,8 @@ class InternalReportingCourseStructureAcceptanceTest(AcceptanceTestCase):
 
         self.assert_data_frames_equal(actual, expected)
 
-    @when_vertica_available
     def test_internal_reporting_course_structure_to_mysql(self):
-        """Verify that data is that expected `course_structure` data is loaded into MySQL"""
+        """Verify that `course_structure` data loaded into MySQL is as expected"""
 
         # First generate the records in S3.
         self.task.launch([
@@ -98,7 +97,4 @@ class InternalReportingCourseStructureAcceptanceTest(AcceptanceTestCase):
         with self.export_db.cursor() as cursor:
             cursor.execute('SELECT * FROM course_structure')
             results = cursor.fetchall()
-            import sys
-            print >> sys.stderr, '<<< response >>>', results
-            for row in results:
-                print >> sys.stderr, '<<< row >>>', row
+            self.assertEqual(len(results), 3)
